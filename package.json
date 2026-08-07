@@ -1,0 +1,12 @@
+{
+  "name": "omnipost",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "license": "MIT",
+  "scripts": {
+    "dev": "pnpm --filter \"*\" --parallel dev",
+    "build": "pnpm --filter \"*\" build",
+    "lint": "pnpm --filter \"*\" lint"
+  }
+}
