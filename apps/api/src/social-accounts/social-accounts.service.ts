@@ -15,6 +15,8 @@ export interface ConnectSocialAccountDto {
   profileImageUrl?: string | null;
   accessToken: string;
   tokenExpiry?: Date | null;
+  refreshToken?: string | null;
+  refreshTokenExpiry?: Date | null;
   connectionStatus?: ConnectionStatus;
 }
 
@@ -107,6 +109,9 @@ export class SocialAccountsService {
     }
 
     const encryptedAccessToken = this.cryptoService.encrypt(data.accessToken);
+    const encryptedRefreshToken = data.refreshToken
+      ? this.cryptoService.encrypt(data.refreshToken)
+      : null;
 
     const account = await this.prisma.socialAccount.create({
       data: {
@@ -116,6 +121,8 @@ export class SocialAccountsService {
         profileImageUrl: data.profileImageUrl ?? null,
         accessToken: encryptedAccessToken,
         tokenExpiry: data.tokenExpiry ?? null,
+        refreshToken: encryptedRefreshToken,
+        refreshTokenExpiry: data.refreshTokenExpiry ?? null,
         connectionStatus: data.connectionStatus ?? ConnectionStatus.CONNECTED,
         userId,
       },

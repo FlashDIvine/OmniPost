@@ -46,6 +46,7 @@ model User {
 
   socialAccounts SocialAccount[]
   posts          Post[]
+  oauthStates    OAuthState[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -58,14 +59,16 @@ model User {
 // ============================================
 
 model SocialAccount {
-  id                String           @id @default(uuid())
-  platform          Platform
-  platformAccountId String
-  username          String
-  profileImageUrl   String?
-  accessToken       String
-  tokenExpiry       DateTime?
-  connectionStatus  ConnectionStatus @default(CONNECTED)
+  id                 String           @id @default(uuid())
+  platform           Platform
+  platformAccountId  String
+  username           String
+  profileImageUrl    String?
+  accessToken        String
+  tokenExpiry        DateTime?
+  refreshToken       String?
+  refreshTokenExpiry DateTime?
+  connectionStatus   ConnectionStatus @default(CONNECTED)
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -77,6 +80,23 @@ model SocialAccount {
 
   @@unique([platform, platformAccountId])
   @@map("social_accounts")
+}
+
+// ============================================
+// OAUTH STATE
+// ============================================
+
+model OAuthState {
+  id         String    @id @default(uuid())
+  state      String    @unique
+  platform   Platform
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@map("oauth_states")
 }
 
 // ============================================

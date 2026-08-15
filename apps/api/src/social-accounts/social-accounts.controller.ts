@@ -5,10 +5,14 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
+  ApiFoundResponse,
   ApiNotFoundResponse,
   ApiOperation,
   ApiParam,
@@ -17,20 +21,26 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { SocialAccountsService } from './social-accounts.service';
+import { TikTokOAuthService } from './services/tiktok-oauth.service';
 import { SocialAccountResponseDto } from './dto/social-account-response.dto';
+import { OAuthConnectResponseDto } from './dto/oauth-connect-response.dto';
+import { TikTokCallbackDto } from './dto/tiktok-callback.dto';
 import { MessageResponseDto } from '../auth/dto/auth-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/types/auth-user.type';
 
 @ApiTags('Social Accounts')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
 @Controller('social-accounts')
 export class SocialAccountsController {
-  constructor(private readonly socialAccountsService: SocialAccountsService) {}
+  constructor(
+    private readonly socialAccountsService: SocialAccountsService,
+    private readonly tikTokOAuthService: TikTokOAuthService,
+  ) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'List all connected social accounts for authenticated user' })
   @ApiResponse({
     status: 200,
@@ -44,7 +54,42 @@ export class SocialAccountsController {
     return this.socialAccountsService.findAllForUser(user.userId);
   }
 
+  @Get('tiktok/connect')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Initiate TikTok Login Kit connection and retrieve authorization URL',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the TikTok authorization URL with secure state',
+    type: OAuthConnectResponseDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  async connectTikTok(
+    @CurrentUser() user: AuthUser,
+  ): Promise<OAuthConnectResponseDto> {
+    return this.tikTokOAuthService.getConnectUrl(user.userId);
+  }
+
+  @Get('tiktok/callback')
+  @ApiOperation({
+    summary: 'TikTok OAuth v2 authorization callback handler',
+  })
+  @ApiFoundResponse({
+    description: 'Redirects to the configured frontend application with connection status',
+  })
+  async tikTokCallback(
+    @Query() query: TikTokCallbackDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { redirectUrl } = await this.tikTokOAuthService.handleCallback(query);
+    return res.redirect(redirectUrl);
+  }
+
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get details of a single connected social account by ID' })
   @ApiParam({
     name: 'id',
@@ -66,6 +111,8 @@ export class SocialAccountsController {
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Disconnect / delete a connected social account' })
   @ApiParam({
