@@ -48,6 +48,7 @@ async function bootstrap() {
       .setTitle('OmniPost API')
       .setDescription('OmniPost API documentation')
       .setVersion('1.0')
+      .addBearerAuth()
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);

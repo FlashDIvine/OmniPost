@@ -4,6 +4,7 @@ packages:
 allowBuilds:
   '@prisma/engines': true
   '@scarf/scarf': true
+  argon2: set this to true or false
   prisma: true
   sharp: true
   unrs-resolver: true
