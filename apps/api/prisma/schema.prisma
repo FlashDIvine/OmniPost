@@ -1,7 +1,29 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// ============================================
+// OmniPost — Prisma Schema
+// ============================================
+// MVP Database Design
+//
+// Entities:
+// - User
+// - SocialAccount
+// - Post
+// - Media
+// - PublishAttempt
+//
+// Relationships:
+// User 1:N SocialAccount
+// User 1:N Post
+// SocialAccount 1:N Post
+// Post 1:1 Media
+// Post 1:N PublishAttempt
+//
+// Notes:
+// - Scheduled publishing is not part of MVP.
+// - One Post has one target SocialAccount.
+// - Drafts can change target accounts only within the same platform.
+// - Publish attempts are processed one at a time at the application layer.
+// - Access tokens must be encrypted at the application layer.
+// ============================================
 
 generator client {
   provider = "prisma-client"
@@ -10,4 +32,145 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ============================================
+// USER
+// ============================================
+
+model User {
+  id           String @id @default(uuid())
+  username     String @unique
+  passwordHash String
+
+  socialAccounts SocialAccount[]
+  posts          Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+// ============================================
+// SOCIAL ACCOUNT
+// ============================================
+
+model SocialAccount {
+  id                String           @id @default(uuid())
+  platform          Platform
+  platformAccountId String
+  username          String
+  profileImageUrl   String?
+  accessToken       String
+  tokenExpiry       DateTime?
+  connectionStatus  ConnectionStatus @default(CONNECTED)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  posts Post[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([platform, platformAccountId])
+  @@map("social_accounts")
+}
+
+// ============================================
+// POST
+// ============================================
+
+model Post {
+  id           String     @id @default(uuid())
+  caption      String?
+  status       PostStatus @default(DRAFT)
+  cover        String?
+  publishedUrl String?
+  publishedAt  DateTime?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  socialAccountId String
+  socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Restrict)
+
+  media Media?
+
+  publishAttempts PublishAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("posts")
+}
+
+// ============================================
+// MEDIA
+// ============================================
+
+model Media {
+  id       String @id @default(uuid())
+  fileName String
+  filePath String
+  fileSize Int
+  mimeType String
+
+  // @unique makes Post -> Media a true 1:1 relationship.
+  postId String @unique
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("media")
+}
+
+// ============================================
+// PUBLISH ATTEMPT
+// ============================================
+
+model PublishAttempt {
+  id           String               @id @default(uuid())
+  status       PublishAttemptStatus @default(PENDING)
+  errorMessage String?
+  apiErrorCode String?
+  startedAt    DateTime             @default(now())
+  finishedAt   DateTime?
+
+  // The target account is obtained through Post.socialAccountId.
+  // Keeping only postId prevents duplicated account references.
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("publish_attempts")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Platform {
+  INSTAGRAM
+  TIKTOK
+}
+
+enum ConnectionStatus {
+  CONNECTED
+  DISCONNECTED
+  EXPIRED
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+enum PublishAttemptStatus {
+  PENDING
+  SUCCESS
+  FAILED
 }
