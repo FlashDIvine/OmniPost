@@ -22,9 +22,11 @@ import {
 } from '@nestjs/swagger';
 import { SocialAccountsService } from './social-accounts.service';
 import { TikTokOAuthService } from './services/tiktok-oauth.service';
+import { InstagramOAuthService } from './services/instagram-oauth.service';
 import { SocialAccountResponseDto } from './dto/social-account-response.dto';
 import { OAuthConnectResponseDto } from './dto/oauth-connect-response.dto';
 import { TikTokCallbackDto } from './dto/tiktok-callback.dto';
+import { InstagramCallbackDto } from './dto/instagram-callback.dto';
 import { MessageResponseDto } from '../auth/dto/auth-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -36,6 +38,7 @@ export class SocialAccountsController {
   constructor(
     private readonly socialAccountsService: SocialAccountsService,
     private readonly tikTokOAuthService: TikTokOAuthService,
+    private readonly instagramOAuthService: InstagramOAuthService,
   ) {}
 
   @Get()
@@ -84,6 +87,39 @@ export class SocialAccountsController {
     @Res() res: Response,
   ): Promise<void> {
     const { redirectUrl } = await this.tikTokOAuthService.handleCallback(query);
+    return res.redirect(redirectUrl);
+  }
+
+  @Get('instagram/connect')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Initiate Instagram Login connection and retrieve authorization URL',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the Instagram authorization URL with secure state',
+    type: OAuthConnectResponseDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  async connectInstagram(
+    @CurrentUser() user: AuthUser,
+  ): Promise<OAuthConnectResponseDto> {
+    return this.instagramOAuthService.getConnectUrl(user.userId);
+  }
+
+  @Get('instagram/callback')
+  @ApiOperation({
+    summary: 'Instagram Login authorization callback handler',
+  })
+  @ApiFoundResponse({
+    description: 'Redirects to the configured frontend application with connection status',
+  })
+  async instagramCallback(
+    @Query() query: InstagramCallbackDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { redirectUrl } = await this.instagramOAuthService.handleCallback(query);
     return res.redirect(redirectUrl);
   }
 
