@@ -6,6 +6,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { SocialAccountsModule } from './social-accounts/social-accounts.module';
+import { PostsModule } from './posts/posts.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { SocialAccountsModule } from './social-accounts/social-accounts.module';
     UsersModule,
     AuthModule,
     SocialAccountsModule,
+    PostsModule,
     HealthModule,
   ],
 })

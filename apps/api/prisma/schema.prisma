@@ -117,13 +117,16 @@ model Post {
   socialAccountId String
   socialAccount   SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Restrict)
 
-  media Media?
+  media Media[]
 
   publishAttempts PublishAttempt[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([socialAccountId])
+  @@index([status])
   @@map("posts")
 }
 
@@ -132,19 +135,21 @@ model Post {
 // ============================================
 
 model Media {
-  id       String @id @default(uuid())
-  fileName String
-  filePath String
-  fileSize Int
-  mimeType String
+  id        String    @id @default(uuid())
+  mediaType MediaType
+  fileName  String
+  filePath  String
+  fileSize  Int
+  mimeType  String
+  sortOrder Int       @default(0)
 
-  // @unique makes Post -> Media a true 1:1 relationship.
-  postId String @unique
+  postId String
   post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([postId, sortOrder])
   @@map("media")
 }
 
@@ -188,6 +193,11 @@ enum PostStatus {
   PUBLISHING
   PUBLISHED
   FAILED
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
 }
 
 enum PublishAttemptStatus {
