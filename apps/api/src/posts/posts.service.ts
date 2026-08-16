@@ -1,10 +1,17 @@
 import {
+  BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SocialAccountsService } from '../social-accounts/social-accounts.service';
-import { PostStatus } from '../../generated/prisma/client';
+import { StorageService } from '../storage/storage.service';
+import {
+  inspectContent,
+  sanitizeFileName,
+} from '../storage/utils/content-inspector';
+import { Media, PostStatus } from '../../generated/prisma/client';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { PostsQueryDto } from './dto/posts-query.dto';
@@ -14,9 +21,12 @@ import { MediaResponseDto } from './dto/media-response.dto';
 
 @Injectable()
 export class PostsService {
+  private readonly logger = new Logger(PostsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly socialAccountsService: SocialAccountsService,
+    private readonly storageService: StorageService,
   ) {}
 
   /**
@@ -69,6 +79,183 @@ export class PostsService {
     });
 
     return this.sanitizePost(post);
+  }
+
+  /**
+   * Uploads a media file for an existing post belonging to the authenticated user.
+   * Performs magic-byte inspection, stores the file safely, creates the Media record,
+   * and rolls back storage on database failure.
+   */
+  async uploadMedia(
+    postId: string,
+    userId: string,
+    file: Express.Multer.File,
+  ): Promise<MediaResponseDto> {
+    if (!file || !file.buffer || file.buffer.length === 0) {
+      throw new BadRequestException('A non-empty file is required for upload');
+    }
+
+    // Verify post ownership
+    const post = await this.prisma.post.findFirst({
+      where: {
+        id: postId,
+        userId,
+      },
+      include: {
+        media: {
+          orderBy: { sortOrder: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    // Inspect content bytes and validate declared MIME type against signature
+    const inspected = inspectContent(file.buffer, file.mimetype);
+    const sanitizedName = sanitizeFileName(
+      file.originalname,
+      inspected.extension,
+    );
+    const nextSortOrder = (post.media[0]?.sortOrder ?? -1) + 1;
+
+    // Generate collision-resistant storage key scoped by user and post
+    const storageKey = this.storageService.generateKey(
+      userId,
+      postId,
+      inspected.extension,
+    );
+
+    // 1. Upload file buffer to storage provider
+    await this.storageService.upload(
+      storageKey,
+      file.buffer,
+      inspected.mimeType,
+    );
+
+    // 2. Persist Media record to database with compensation rollback
+    try {
+      const media = await this.prisma.media.create({
+        data: {
+          postId,
+          mediaType: inspected.mediaType,
+          fileName: sanitizedName,
+          filePath: storageKey,
+          fileSize: file.size || file.buffer.length,
+          mimeType: inspected.mimeType,
+          sortOrder: nextSortOrder,
+        },
+      });
+
+      return this.sanitizeMedia(media);
+    } catch (dbError) {
+      // Compensation: remove stored file to prevent orphaned physical assets
+      this.logger.warn(
+        `Database insert failed for media upload. Rolling back storage file: ${storageKey}`,
+      );
+      await this.storageService.delete(storageKey).catch((delErr) => {
+        this.logger.error(
+          `Failed to clean up storage file ${storageKey} during rollback: ${delErr.message}`,
+        );
+      });
+      throw dbError;
+    }
+  }
+
+  /**
+   * Deletes a media asset from a post belonging to the authenticated user.
+   * Deletes the physical file from storage and removes the database record.
+   */
+  async deleteMedia(
+    postId: string,
+    mediaId: string,
+    userId: string,
+  ): Promise<{ message: string }> {
+    const post = await this.prisma.post.findFirst({
+      where: {
+        id: postId,
+        userId,
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const media = await this.prisma.media.findFirst({
+      where: {
+        id: mediaId,
+        postId,
+      },
+    });
+
+    if (!media) {
+      throw new NotFoundException('Media not found');
+    }
+
+    // Delete physical file from storage (idempotent)
+    await this.storageService.delete(media.filePath).catch((err) => {
+      this.logger.warn(
+        `Failed to delete physical media file ${media.filePath}: ${err.message}`,
+      );
+    });
+
+    // Delete database record
+    await this.prisma.media.delete({
+      where: { id: media.id },
+    });
+
+    return { message: 'Media deleted successfully' };
+  }
+
+  /**
+   * Retrieves media buffer and metadata for authenticated viewing / streaming.
+   */
+  async getMediaStream(
+    postId: string,
+    mediaId: string,
+    userId: string,
+  ): Promise<{
+    buffer: Buffer;
+    mimeType: string;
+    fileName: string;
+    fileSize: number;
+  }> {
+    const post = await this.prisma.post.findFirst({
+      where: {
+        id: postId,
+        userId,
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const media = await this.prisma.media.findFirst({
+      where: {
+        id: mediaId,
+        postId,
+      },
+    });
+
+    if (!media) {
+      throw new NotFoundException('Media not found');
+    }
+
+    const buffer = await this.storageService.getBuffer(media.filePath);
+    if (!buffer) {
+      throw new NotFoundException('Media file not found in storage');
+    }
+
+    return {
+      buffer,
+      mimeType: media.mimeType,
+      fileName: media.fileName,
+      fileSize: media.fileSize,
+    };
   }
 
   /**
@@ -145,7 +332,7 @@ export class PostsService {
   /**
    * Updates an existing post belonging to the authenticated user.
    * Re-validates target SocialAccount ownership if changed.
-   * Updates media assets transactionally if specified.
+   * Updates media assets transactionally and cleans up replaced physical files.
    */
   async updateForUser(
     id: string,
@@ -180,9 +367,16 @@ export class PostsService {
       }
     }
 
+    let oldMediaFilesToCleanup: string[] = [];
+
     const updatedPost = await this.prisma.$transaction(async (tx) => {
       // If media array is provided in update, replace existing media records
       if (dto.media !== undefined) {
+        const oldMedia = await tx.media.findMany({
+          where: { postId: id },
+        });
+        oldMediaFilesToCleanup = oldMedia.map((m) => m.filePath);
+
         await tx.media.deleteMany({
           where: { postId: id },
         });
@@ -220,12 +414,17 @@ export class PostsService {
       });
     });
 
+    // Clean up replaced physical files after successful database commit
+    for (const oldKey of oldMediaFilesToCleanup) {
+      await this.storageService.delete(oldKey).catch(() => {});
+    }
+
     return this.sanitizePost(updatedPost);
   }
 
   /**
    * Deletes a post belonging to the authenticated user.
-   * Cascade deletes associated Media records in database.
+   * Deletes associated physical media files and cascade deletes DB records.
    */
   async deleteForUser(
     id: string,
@@ -236,35 +435,59 @@ export class PostsService {
         id,
         userId,
       },
+      include: {
+        media: true,
+      },
     });
 
     if (!existingPost) {
       throw new NotFoundException('Post not found');
     }
 
+    const storageKeys = existingPost.media.map((m) => m.filePath);
+
+    // Delete post in database (cascade deletes DB Media records)
     await this.prisma.post.delete({
       where: { id: existingPost.id },
     });
 
+    // Clean up physical files from storage
+    for (const key of storageKeys) {
+      await this.storageService.delete(key).catch((err) => {
+        this.logger.warn(
+          `Failed to delete physical media file ${key} during post deletion: ${err.message}`,
+        );
+      });
+    }
+
     return { message: 'Post deleted successfully' };
+  }
+
+  /**
+   * Sanitizes media database record.
+   */
+  public sanitizeMedia(media: Media): MediaResponseDto {
+    return {
+      id: media.id,
+      postId: media.postId,
+      mediaType: media.mediaType,
+      fileName: media.fileName,
+      filePath: media.filePath,
+      fileSize: media.fileSize,
+      mimeType: media.mimeType,
+      sortOrder: media.sortOrder,
+      createdAt: media.createdAt,
+      updatedAt: media.updatedAt,
+    };
   }
 
   /**
    * Sanitizes post and nested relationships, guaranteeing no internal credentials or secrets leak.
    */
   private sanitizePost(post: any): PostResponseDto {
-    const media: MediaResponseDto[] = (post.media || []).map((m: any) => ({
-      id: m.id,
-      postId: m.postId,
-      mediaType: m.mediaType,
-      fileName: m.fileName,
-      filePath: m.filePath,
-      fileSize: m.fileSize,
-      mimeType: m.mimeType,
-      sortOrder: m.sortOrder,
-      createdAt: m.createdAt,
-      updatedAt: m.updatedAt,
-    }));
+    const media: MediaResponseDto[] = (post.media || []).map((m: any) =>
+      this.sanitizeMedia(m),
+    );
 
     return {
       id: post.id,
