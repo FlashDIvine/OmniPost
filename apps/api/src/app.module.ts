@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { SocialAccountsModule } from './social-accounts/social-accounts.module';
 import { PostsModule } from './posts/posts.module';
+import { PublishingModule } from './publishing/publishing.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PostsModule } from './posts/posts.module';
     AuthModule,
     SocialAccountsModule,
     PostsModule,
+    PublishingModule,
     HealthModule,
   ],
 })
