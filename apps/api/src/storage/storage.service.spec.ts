@@ -16,6 +16,9 @@ describe('StorageService', () => {
     getBuffer: jest.fn().mockResolvedValue(Buffer.from('test')),
     getStream: jest.fn().mockResolvedValue(null),
     getPublicUrl: jest.fn((key: string) => `/media/${key}`),
+    getExternalUrl: jest.fn(
+      (key: string) => `https://cdn.example.com/media/${key}`,
+    ),
   };
 
   beforeEach(async () => {
@@ -74,6 +77,12 @@ describe('StorageService', () => {
     it('should return public url', () => {
       const url = service.getPublicUrl('key.jpg');
       expect(url).toBe('/media/key.jpg');
+    });
+
+    it('should return external url', () => {
+      const url = service.getExternalUrl('key.jpg');
+      expect(url).toBe('https://cdn.example.com/media/key.jpg');
+      expect(adapter.getExternalUrl).toHaveBeenCalledWith('key.jpg');
     });
   });
 });

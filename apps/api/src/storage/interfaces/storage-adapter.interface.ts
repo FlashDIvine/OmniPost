@@ -38,6 +38,11 @@ export interface StorageAdapter {
    * Optional method to generate a public / logical URL for the asset.
    */
   getPublicUrl?(key: string): string;
+
+  /**
+   * Generates a fully qualified external URL (e.g. HTTPS CDN/Storage URL) accessible by external platforms.
+   */
+  getExternalUrl(key: string): string;
 }
 
 export const STORAGE_ADAPTER = Symbol('STORAGE_ADAPTER');

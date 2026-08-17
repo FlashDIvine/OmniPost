@@ -120,5 +120,10 @@ describe('LocalStorageAdapter', () => {
       );
       expect(deleted).toBe(false);
     });
+
+    it('should generate external url using configured base url or fallback', () => {
+      const url = adapter.getExternalUrl('users/u1/posts/p1/img.jpg');
+      expect(url).toBe('http://localhost:3001/api/media/users/u1/posts/p1/img.jpg');
+    });
   });
 });

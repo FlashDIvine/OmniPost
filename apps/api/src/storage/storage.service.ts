@@ -71,4 +71,11 @@ export class StorageService {
     }
     return `/media/${key}`;
   }
+
+  /**
+   * Returns fully qualified external HTTPS URL for external platform consumption.
+   */
+  getExternalUrl(key: string): string {
+    return this.storageAdapter.getExternalUrl(key);
+  }
 }

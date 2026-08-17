@@ -128,4 +128,14 @@ export class LocalStorageAdapter implements StorageAdapter {
   getPublicUrl(key: string): string {
     return `/media/${key}`;
   }
+
+  getExternalUrl(key: string): string {
+    const baseUrl =
+      this.configService.get<string>('MEDIA_PUBLIC_BASE_URL') ||
+      this.configService.get<string>('PUBLIC_MEDIA_BASE_URL') ||
+      'http://localhost:3001/api/media';
+
+    const normalizedKey = key.replace(/^\/+/, '');
+    return `${baseUrl.replace(/\/+$/, '')}/${normalizedKey}`;
+  }
 }
