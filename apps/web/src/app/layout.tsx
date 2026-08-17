@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata } from 'next';
+import './globals.css';
+import { AuthProvider } from '@/lib/auth/auth-context';
 
 export const metadata: Metadata = {
-  title: "Social Hub",
-  description: "Social Hub web application",
+  title: 'OmniPost — Social Hub',
+  description: 'Unified multi-platform social media publishing and management engine',
 };
 
 export default function RootLayout({
@@ -13,7 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
