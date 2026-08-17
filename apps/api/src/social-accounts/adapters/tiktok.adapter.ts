@@ -43,7 +43,7 @@ export class TikTokAdapter implements PlatformAdapter {
 
     const scope =
       this.configService.get<string>('TIKTOK_SCOPES') ||
-      'user.info.basic,user.info.profile';
+      'user.info.basic,user.info.profile,video.publish';
 
     const params = new URLSearchParams({
       client_key: clientKey,
