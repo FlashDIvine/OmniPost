@@ -16,6 +16,7 @@ export function Header({ apiStatus = 'checking' }: HeaderProps) {
   const navLinks = isAuthenticated
     ? [
         { href: '/dashboard', label: 'Dashboard' },
+        { href: '/dashboard/posts', label: 'Posts' },
         { href: '/dashboard/accounts', label: 'Social Accounts' },
       ]
     : [
@@ -45,7 +46,10 @@ export function Header({ apiStatus = 'checking' }: HeaderProps) {
 
           <nav className="hidden md:flex items-center gap-1">
             {navLinks.map((link) => {
-              const isActive = pathname === link.href;
+              const isActive =
+                link.href === '/dashboard'
+                  ? pathname === '/dashboard'
+                  : pathname.startsWith(link.href);
               return (
                 <Link
                   key={link.href}
